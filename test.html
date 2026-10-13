@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mphony test</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px;color:#211c17}
+  h1{font-size:20px}
+  p{color:#555;font-size:14px;line-height:1.5}
+  textarea,input{width:100%;font-size:20px;padding:12px;margin:8px 0 20px;border:2px solid #ccc;border-radius:10px;box-sizing:border-box;font-family:"Noto Sans Bengali","Hind Siliguri",system-ui,sans-serif}
+  b{color:#9d2b3a}
+  code{background:#eee;padding:1px 6px;border-radius:4px}
+</style>
+</head>
+<body>
+  <h1>Mphony — standalone test (no extension needed)</h1>
+  <p>This page loads the same engine + logic directly. Type <b>ami</b> in a box below.
+     It should become <b>আমি</b> and keep going in Bangla (<code>ami tumi kemon acho</code> → আমি তুমি কেমন আছ).
+     Press <code>Ctrl+Space</code> to toggle back to English.</p>
+
+  <label>Textarea (like Google's search box):</label>
+  <textarea rows="3" placeholder="type: hello ami kemon acho"></textarea>
+
+  <label>Text input:</label>
+  <input type="text" placeholder="type: ami">
+
+  <p>If this works here but the extension doesn't work on a real website, the cause is
+     that the content script didn't inject into that tab — <b>reload the tab after installing</b>.</p>
+
+  <script src="avro-lib.js"></script>
+  <script src="dict-bn.js"></script>
+  <script src="content.js"></script>
+</body>
+</html>
