@@ -15,7 +15,7 @@
   function parse(s) { try { return AVRO.parse(s); } catch (e) { return s; } }
 
   // one-time load marker so you can confirm injection + which build is live
-  var DHONI_VERSION = "0.1.5-dict30k";
+  var DHONI_VERSION = "0.1.7-gtry";
   try { console.log("%cMphony " + DHONI_VERSION + " loaded", "color:#2f6f6a;font-weight:bold", "on", location.host); } catch (e) {}
 
   // ---- settings (synced with storage + popup) ----
@@ -108,6 +108,32 @@
     catch (e) { el.dispatchEvent(new Event("input", { bubbles: true })); }
   }
 
+  function fireInput(el, data) {
+    try { el.dispatchEvent(new InputEvent("input", { bubbles: true, cancelable: false, inputType: "insertText", data: data })); }
+    catch (e) { try { el.dispatchEvent(new Event("input", { bubbles: true })); } catch (_) {} }
+  }
+
+  // Replace range [s,e) in an input/textarea with `repl`. Try the browser's native
+  // editing path (execCommand), then verify it actually took — stubborn boxes like
+  // Google's search field re-sync from their own model, so if the value didn't
+  // change we fall back to the native value setter + a full input event.
+  function replaceRangeInput(el, s, e, repl) {
+    var before = el.value;
+    var want = before.slice(0, s) + repl + before.slice(e);
+    try {
+      el.focus();
+      el.setSelectionRange(s, e);
+      if (typeof document.execCommand === "function" && document.execCommand("insertText", false, repl)) {
+        if (el.value === want || el.value !== before) { return; } // it stuck
+      }
+    } catch (_) {}
+    // fallback: native value setter + rich input event
+    setNativeValue(el, want);
+    var c = s + repl.length;
+    try { el.setSelectionRange(c, c); } catch (_) {}
+    fireInput(el, repl);
+  }
+
   // Return {text, caret, replace(start,end,repl)} for the active edit point, or null.
   function getCtx(el) {
     if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
@@ -116,13 +142,7 @@
       return {
         text: el.value,
         caret: caret,
-        replace: function (s, e, repl) {
-          var v = el.value;
-          setNativeValue(el, v.slice(0, s) + repl + v.slice(e));
-          var c = s + repl.length;
-          try { el.setSelectionRange(c, c); } catch (_) {}
-          dispatchInput(el);
-        }
+        replace: function (s, e, repl) { replaceRangeInput(el, s, e, repl); }
       };
     }
     // contenteditable — works in plain editors and, via execCommand, in rich
@@ -265,11 +285,8 @@
         busy = true;
         try {
           if (isInputLike(el)) {
-            var c = el.selectionStart, v = el.value, start = c - roman.length;
-            setNativeValue(el, v.slice(0, start) + repl + v.slice(c));
-            var nc = start + repl.length;
-            try { el.setSelectionRange(nc, nc); } catch (_) {}
-            dispatchInput(el);
+            var c = el.selectionStart;
+            replaceRangeInput(el, c - roman.length, c, repl);
           } else {
             var sel = window.getSelection();
             try { for (var i = 0; i < roman.length; i++) { sel.modify("extend", "backward", "character"); } } catch (_) {}
