@@ -32,6 +32,29 @@
   .note{font-size:12px;color:#6f655a}
   @media (prefers-color-scheme:dark){.note{color:#a79a8b}}
   @media (prefers-color-scheme:dark){.btn{background:#241f1a;border-color:#39322a;color:#6fc0b8}}
+  .linkbtn{font:12px system-ui,sans-serif;color:#6f655a;background:none;border:0;padding:2px 0;cursor:pointer;text-align:left}
+  .linkbtn:hover:not(:disabled){color:#2f6f6a;text-decoration:underline}
+  .linkbtn:disabled{cursor:default}
+  @media (prefers-color-scheme:dark){.linkbtn{color:#a79a8b}.linkbtn:hover:not(:disabled){color:#6fc0b8}}
+  #learned-panel{margin:-4px 0 12px}
+  #learned-search{width:100%;box-sizing:border-box;font:13px system-ui,sans-serif;margin-bottom:6px}
+  #learned-search:focus{outline:2px solid #2f6f6a;outline-offset:-1px}
+  .linkbtn .sub2{display:block;font-size:11px;opacity:.8}
+  #learned-list{list-style:none;margin:0;padding:2px;max-height:190px;overflow-y:auto;border:1px solid #ddd4c6;border-radius:8px;background:#fff}
+  @media (prefers-color-scheme:dark){#learned-list{background:#241f1a;border-color:#39322a}}
+  #learned-list li{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:6px}
+  #learned-list li:hover{background:#f3eee5}
+  @media (prefers-color-scheme:dark){#learned-list li:hover{background:#2b251f}}
+  .lw{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:15px 'Noto Sans Bengali','Hind Siliguri',system-ui,sans-serif}
+  .lc{font:600 11px ui-monospace,monospace;color:#6f655a}
+  .ls{font-size:10.5px;padding:1px 6px;border-radius:999px;white-space:nowrap}
+  .ls.on{background:#dcece9;color:#2f6f6a}
+  .ls.wait{background:#efe9dd;color:#6f655a}
+  @media (prefers-color-scheme:dark){.lc{color:#a79a8b}.ls.on{background:#1f3a37;color:#6fc0b8}.ls.wait{background:#2b251f;color:#a79a8b}}
+  .lx{border:0;background:none;color:#9d2b3a;font-size:14px;line-height:1;padding:2px 4px;border-radius:5px;cursor:pointer}
+  .lx:hover{background:#f6dfe2}
+  @media (prefers-color-scheme:dark){.lx{color:#e4707d}.lx:hover{background:#3a2328}}
+  .empty{font-size:12px;color:#6f655a;padding:8px 6px}
 </style>
 </head>
 <body>
@@ -55,8 +78,12 @@
     </div>
 
     <div class="row">
-      <span class="note" id="learned-count">No learned words yet</span>
+      <button class="linkbtn" id="learned-count" aria-expanded="false" aria-controls="learned-panel" disabled>No learned words yet</button>
       <button class="btn" id="clear-learned">Clear</button>
+    </div>
+    <div id="learned-panel" hidden>
+      <input type="text" id="learned-search" placeholder="Search (Bangla or roman)" hidden>
+      <ul id="learned-list"></ul>
     </div>
 
     <div class="row">
@@ -73,6 +100,7 @@
       Developed by <b>Md Mehedi Hasan</b> · stoicmehedi@gmail.com
     </p>
   </div>
+  <script src="avro-lib.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>
