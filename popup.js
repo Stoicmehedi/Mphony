@@ -132,7 +132,10 @@
   function showShortcut(cmds) {
     var c = (cmds || []).filter(function (x) { return x.name === "toggle-language"; })[0];
     shortcutEl.textContent = "";
-    if (!c || !c.shortcut) { shortcutEl.textContent = "(not set)"; return; }
+    var fallback = !c || !c.shortcut;
+    try { API.storage.local.set({ shortcutFallback: fallback }); } catch (e) {}
+    // unassigned: content.js handles Ctrl+Space itself, so that is the shortcut
+    if (fallback) { c = { shortcut: "Ctrl+Space" }; }
     c.shortcut.split("+").forEach(function (k, i) {
       if (i) { shortcutEl.appendChild(document.createTextNode("+")); }
       var kbd = document.createElement("kbd");

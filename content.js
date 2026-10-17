@@ -32,6 +32,7 @@
   }
   var ENABLED = true;
   var LEARN_ON = true;
+  var SHORTCUT_FALLBACK = true;   // handle Ctrl+Space in-page while the browser command has no key
   var learned = { u: {}, b: {} }, pending = { u: {}, b: {} }; // see "learning" below; set before storage loads
   var DEBUG = false;
   // Chrome uses callbacks; Firefox returns a Promise — support both.
@@ -42,11 +43,12 @@
     } catch (e) { cb(defaults); }
   }
   try {
-    storageGet({ enabled: true, debug: false, siteLang: {}, learn: true, learned: null }, function (r) {
+    storageGet({ enabled: true, debug: false, siteLang: {}, learn: true, learned: null, shortcutFallback: true }, function (r) {
       if (r) {
         ENABLED = r.enabled !== false;
         DEBUG = !!r.debug;
         LEARN_ON = r.learn !== false;
+        SHORTCUT_FALLBACK = r.shortcutFallback !== false;
         learnedLoaded(r.learned);
         siteState.lang = (r.siteLang && r.siteLang[SITE] === "bn") ? "bn" : "en";
         if (DEBUG) { hud("loaded on " + location.host); }
@@ -55,6 +57,7 @@
     API.storage.onChanged.addListener(function (changes, area) {
       if (area !== "local") { return; }
       if (changes.enabled) { ENABLED = changes.enabled.newValue !== false; }
+      if (changes.shortcutFallback) { SHORTCUT_FALLBACK = changes.shortcutFallback.newValue !== false; }
       if (changes.learn) { LEARN_ON = changes.learn.newValue !== false; }
       if (changes.learned) { learnedLoaded(changes.learned.newValue); }
       if (changes.siteLang) {
@@ -549,6 +552,14 @@
       if (e.key === "Escape") { e.preventDefault(); sgHide(); return; }
       if (e.key === "Tab") { e.preventDefault(); sgAccept(sg.idx < 0 ? 0 : sg.idx); return; }
       if (e.key === "Enter" && sg.idx >= 0) { e.preventDefault(); sgAccept(sg.idx); return; }
+    }
+
+    // Ctrl+Space fallback when the browser didn't assign the shortcut (see background.js)
+    if (SHORTCUT_FALLBACK && e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "Space" || e.key === " ")) {
+      if (!ENABLED) { return; }
+      e.preventDefault();
+      toggleLang(el);
+      return;
     }
 
     if (!ENABLED) { return; }
