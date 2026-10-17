@@ -26,12 +26,18 @@
   @media (prefers-color-scheme:dark){.tip b{color:#e4707d}}
   kbd{font:600 11px ui-monospace,monospace;background:#efe9dd;border:1px solid #ddd4c6;border-radius:4px;padding:1px 5px}
   @media (prefers-color-scheme:dark){kbd{background:#2b251f;border-color:#39322a}}
+  .btn{font:600 12px system-ui,sans-serif;padding:5px 10px;border:1px solid #ddd4c6;border-radius:7px;background:#fff;color:#2f6f6a;cursor:pointer}
+  .btn:hover{border-color:#2f6f6a}
+  .btn:disabled{opacity:.5;cursor:default}
+  .note{font-size:12px;color:#6f655a}
+  @media (prefers-color-scheme:dark){.note{color:#a79a8b}}
+  @media (prefers-color-scheme:dark){.btn{background:#241f1a;border-color:#39322a;color:#6fc0b8}}
 </style>
 </head>
 <body>
   <div class="pad">
     <h1>Mphony</h1>
-    <p class="sub">English → Bangla, on a trigger word.</p>
+    <p class="sub">English → Bangla, on a shortcut.</p>
 
     <div class="row">
       <label for="enabled">Enabled</label>
@@ -43,9 +49,25 @@
       <label class="sw"><input type="checkbox" id="debug"><span class="track"></span></label>
     </div>
 
+    <div class="row">
+      <label for="learn">Learn my words</label>
+      <label class="sw"><input type="checkbox" id="learn" checked><span class="track"></span></label>
+    </div>
+
+    <div class="row">
+      <span class="note" id="learned-count">No learned words yet</span>
+      <button class="btn" id="clear-learned">Clear</button>
+    </div>
+
+    <div class="row">
+      <label>Shortcut <span id="shortcut"><kbd>Ctrl</kbd>+<kbd>Space</kbd></span></label>
+      <button class="btn" id="change-shortcut">Change</button>
+    </div>
+
     <p class="tip">
-      Type normally in English. Press <kbd>Ctrl</kbd>+<kbd>Space</kbd> in any text box to
-      switch to Bangla (Avro phonetic); press it again to switch back to English.
+      Type normally in English. Press the shortcut in any text box to switch the
+      site to Bangla (Avro phonetic); press it again to switch back. Each site
+      remembers its mode. Learned words stay in this browser only.
     </p>
     <p class="tip" style="border-top:none;margin-top:0;padding-top:0">
       Developed by <b>Md Mehedi Hasan</b> · stoicmehedi@gmail.com

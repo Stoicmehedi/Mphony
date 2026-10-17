@@ -1,20 +1,48 @@
 {
   "manifest_version": 3,
   "name": "Mphony",
-  "version": "0.1.5",
-  "description": "Type English by default. Type the trigger word (ami) and typing flips to live Bangla (Avro phonetic) in any text box. Ctrl+Space toggles.",
+  "version": "0.2.0",
+  "description": "Type English by default. A shortcut (Ctrl+Space, changeable) toggles live Bangla (Avro phonetic) in any text box; the mode is remembered per site.",
   "author": "Md Mehedi Hasan",
-  "developer": { "name": "Md Mehedi Hasan" },
+  "developer": {
+    "name": "Md Mehedi Hasan"
+  },
   "icons": {
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "permissions": ["storage"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "commands": {
+    "toggle-language": {
+      "suggested_key": {
+        "default": "Ctrl+Space",
+        "mac": "MacCtrl+Space"
+      },
+      "description": "Toggle Bangla / English"
+    }
+  },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["avro-lib.js", "dict-bn.js", "content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "avro-lib.js",
+        "dict-bn.js",
+        "next-bn.js",
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }
@@ -30,7 +58,12 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "mphony@mehedi",
-      "strict_min_version": "109.0"
+      "strict_min_version": "121.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   }
 }

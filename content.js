@@ -1,5 +1,5 @@
 /*
-  Mphony content script — English by default; the trigger word flips the field to
+  Mphony content script — English by default; the toggle shortcut flips the site to
   live Bangla phonetic (Avro). Works in <input>, <textarea> and simple
   contenteditable fields on any site. Loaded after avro-lib.js, so the global
   OmicronLab.Avro.Phonetic is available in this isolated world.
@@ -15,11 +15,24 @@
   function parse(s) { try { return AVRO.parse(s); } catch (e) { return s; } }
 
   // one-time load marker so you can confirm injection + which build is live
-  var DHONI_VERSION = "0.1.7-gtry";
+  var DHONI_VERSION = "0.2.0-next";
   try { console.log("%cMphony " + DHONI_VERSION + " loaded", "color:#2f6f6a;font-weight:bold", "on", location.host); } catch (e) {}
 
   // ---- settings (synced with storage + popup) ----
+  // Bangla/English mode is remembered per site (hostname), so new tabs and
+  // reloads of the same site open in the last mode used there.
+  var SITE = location.hostname || location.protocol;
+  var siteState = { lang: "en" };
+  function saveSiteLang(lang) {
+    storageGet({ siteLang: {} }, function (r) {
+      var m = (r && r.siteLang) || {};
+      if (lang === "bn") { m[SITE] = "bn"; } else { delete m[SITE]; }
+      try { API.storage.local.set({ siteLang: m }); } catch (e) {}
+    });
+  }
   var ENABLED = true;
+  var LEARN_ON = true;
+  var learned = { u: {}, b: {} }, pending = { u: {}, b: {} }; // see "learning" below; set before storage loads
   var DEBUG = false;
   // Chrome uses callbacks; Firefox returns a Promise — support both.
   function storageGet(defaults, cb) {
@@ -29,16 +42,26 @@
     } catch (e) { cb(defaults); }
   }
   try {
-    storageGet({ enabled: true, debug: false }, function (r) {
+    storageGet({ enabled: true, debug: false, siteLang: {}, learn: true, learned: null }, function (r) {
       if (r) {
         ENABLED = r.enabled !== false;
         DEBUG = !!r.debug;
+        LEARN_ON = r.learn !== false;
+        learnedLoaded(r.learned);
+        siteState.lang = (r.siteLang && r.siteLang[SITE] === "bn") ? "bn" : "en";
         if (DEBUG) { hud("loaded on " + location.host); }
       }
     });
     API.storage.onChanged.addListener(function (changes, area) {
       if (area !== "local") { return; }
       if (changes.enabled) { ENABLED = changes.enabled.newValue !== false; }
+      if (changes.learn) { LEARN_ON = changes.learn.newValue !== false; }
+      if (changes.learned) { learnedLoaded(changes.learned.newValue); }
+      if (changes.siteLang) {
+        var m = changes.siteLang.newValue || {};
+        var lang = m[SITE] === "bn" ? "bn" : "en";
+        if (lang !== siteState.lang) { siteState.lang = lang; if (lang !== "bn") { sgHide(); } }
+      }
       if (changes.debug) { DEBUG = !!changes.debug.newValue; if (DEBUG) { hud("debug on · " + location.host); } else { hudOff(); } }
     });
   } catch (e) { /* storage may be unavailable in some frames */ }
@@ -65,24 +88,10 @@
 
   var ROMAN = /[A-Za-z]/;                       // what counts as a letter in a word
   var ROMAN_INPUT = /[A-Za-z`^~]/;              // chars that are still "mid-word" in Bangla mode
-  var states = new WeakMap();                   // per-element { lang: 'en' | 'bn' }
   var busy = false;                             // guard against our own synthetic input events
 
-  // The STABLE field to key state on. Rich editors (WhatsApp/Lexical) fire events
-  // on throwaway inner nodes, so we climb to the contenteditable host, which
-  // persists across keystrokes. Without this, Bangla mode resets every keystroke.
-  function stateKey(el) {
-    if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") { return el; }
-    var n = el;
-    while (n && n.parentNode && n.parentNode.isContentEditable) { n = n.parentNode; }
-    return (n && n.isContentEditable) ? n : el;
-  }
-  function stateOf(el) {
-    var k = stateKey(el);
-    var s = states.get(k);
-    if (!s) { s = { lang: "en" }; states.set(k, s); }
-    return s;
-  }
+  // One mode for the whole site (see SITE above); every field shares it.
+  function stateOf(el) { return siteState; }
 
   function isEditable(el) {
     if (!el || !el.tagName) { return false; }
@@ -191,9 +200,11 @@
     while (start > 0 && ROMAN_INPUT.test(text.charAt(start - 1))) { start--; }
     var word = text.slice(start, caret);
     if (!word || !ROMAN.test(word)) { return false; }
+    var bn = parse(word);
     busy = true;
-    ctx.replace(start, caret, parse(word));
+    ctx.replace(start, caret, bn);
     busy = false;
+    learnWord(prevWordIn(text.slice(0, start)), bn);
     return true;
   }
 
@@ -217,6 +228,7 @@
     "সকাল","সন্ধ্যা","রাত","দিন","দেশ","নাম","পানি","মা","অফিস","অফিসে",
     "ধন্যবাদ","শুভেচ্ছা","দয়া","অনেক","একটু","এখন","হবে","হচ্ছে","হয়েছে","থাকি","লাগছে","থেকো"
   ];
+  // Hand-picked chat replies, shown before the corpus suggestions.
   var NEXT = {
     "আমি": ["তোমাকে", "ভালো", "আজ", "এখন", "একটু", "জানি"],
     "আমরা": ["যাবো", "আছি", "সবাই", "একসাথে"],
@@ -232,6 +244,117 @@
     "একটু": ["পরে", "আগে", "অপেক্ষা", "দাঁড়াও"],
     "ধন্যবাদ": ["আপনাকে", "তোমাকে", "অনেক"]
   };
+
+  // য় ড় ঢ় can be one code point or base+nukta; Avro and our data use the former.
+  function norm(w) {
+    return w.replace(/\u09AF\u09BC/g, "\u09DF").replace(/\u09A1\u09BC/g, "\u09DC")
+      .replace(/\u09A2\u09BC/g, "\u09DD").replace(/\u200C/g, "");
+  }
+  var BN_WORD = /^[\u0980-\u09E5\u09F0-\u09FF\u200C\u200D]+$/;
+
+  // Corpus next-word table (next-bn.js): "i:j,k,..." hex indexes into DICT,
+  // best first. Parsed on first use so pages that never use Bangla pay nothing.
+  var corpusNext = null;
+  function corpusNextOf(w) {
+    if (!corpusNext) {
+      corpusNext = {};
+      var raw = (typeof DHONI_NEXT === "string") ? DHONI_NEXT : "";
+      var rows = raw ? raw.split("|") : [];
+      for (var i = 0; i < rows.length; i++) {
+        var c = rows[i].indexOf(":");
+        corpusNext[DICT[parseInt(rows[i].slice(0, c), 16)]] = rows[i].slice(c + 1);
+      }
+    }
+    var r = corpusNext[w];
+    if (typeof r === "string") {           // decode a row lazily, once
+      r = r.split(",").map(function (x) { return DICT[parseInt(x, 16)]; });
+      corpusNext[w] = r;
+    }
+    return r || [];
+  }
+
+  // ---- learning from the user's own typing ----
+  // Stored only in this browser (storage.local, never synced or sent):
+  // { u: {word: count}, b: {prevWord: {word: count}} }. Words the user commits
+  // in Bangla mode are counted; a word needs LEARN_MIN uses before it is offered.
+  var LEARN_MIN = 2, MAX_U = 5000, MAX_B = 5000;
+  var flushTimer = null;
+  var INCOGNITO = false;
+  try { INCOGNITO = !!(API.extension && API.extension.inIncognitoContext); } catch (e) {}
+
+  function addInto(t, d) {
+    var k, w;
+    for (k in d.u) { t.u[k] = (t.u[k] || 0) + d.u[k]; }
+    for (k in d.b) {
+      var row = t.b[k] || (t.b[k] = {});
+      for (w in d.b[k]) { row[w] = (row[w] || 0) + d.b[k][w]; }
+    }
+    return t;
+  }
+  function copyLearned(v) {
+    return addInto({ u: {}, b: {} }, (v && v.u && v.b) ? v : { u: {}, b: {} });
+  }
+  function learnedLoaded(v) {
+    if (!v) { pending = { u: {}, b: {} }; }       // cleared from the popup
+    learned = addInto(copyLearned(v), pending);
+  }
+  // keep the store bounded: drop the least-used entries
+  function prune(t) {
+    var us = Object.keys(t.u);
+    if (us.length > MAX_U) {
+      us.sort(function (a, b) { return t.u[b] - t.u[a]; });
+      us.slice(Math.floor(MAX_U * 0.8)).forEach(function (k) { delete t.u[k]; });
+    }
+    var bs = [];
+    for (var p in t.b) { for (var w in t.b[p]) { bs.push([p, w, t.b[p][w]]); } }
+    if (bs.length > MAX_B) {
+      bs.sort(function (a, b) { return b[2] - a[2]; });
+      bs.slice(Math.floor(MAX_B * 0.8)).forEach(function (e) {
+        delete t.b[e[0]][e[1]];
+        if (!Object.keys(t.b[e[0]]).length) { delete t.b[e[0]]; }
+      });
+    }
+    return t;
+  }
+  function flushLearned() {
+    flushTimer = null;
+    var d = pending;
+    pending = { u: {}, b: {} };
+    storageGet({ learned: null }, function (r) {   // merge with other tabs' writes
+      var t = prune(addInto(copyLearned(r && r.learned), d));
+      try { API.storage.local.set({ learned: t }); } catch (e) {}
+    });
+  }
+  function learnWord(prev, word) {
+    if (!LEARN_ON || INCOGNITO) { return; }
+    word = norm(word || "");
+    if (!BN_WORD.test(word)) { return; }
+    prev = norm(prev || "");
+    var d = { u: {}, b: {} };
+    d.u[word] = 1;
+    if (BN_WORD.test(prev)) { d.b[prev] = {}; d.b[prev][word] = 1; }
+    addInto(learned, d);
+    addInto(pending, d);
+    if (!flushTimer) { flushTimer = setTimeout(flushLearned, 2000); }
+  }
+  function prevWordIn(before) {
+    var m = before.match(/(\S+)\s+$/);
+    return m ? m[1] : "";
+  }
+  // the user's frequent words after `prev`, most used first
+  function learnedNext(prev) {
+    if (!LEARN_ON) { return []; }
+    var row = learned.b[prev] || {};
+    return Object.keys(row).filter(function (w) { return row[w] >= LEARN_MIN; })
+      .sort(function (a, b) { return row[b] - row[a]; });
+  }
+  // the user's frequent words starting with `pfx`, best for this context first
+  function learnedWith(pfx, prev) {
+    if (!LEARN_ON) { return []; }
+    var row = learned.b[prev] || {}, u = learned.u;
+    return Object.keys(u).filter(function (w) { return u[w] >= LEARN_MIN && w !== pfx && w.indexOf(pfx) === 0; })
+      .sort(function (a, b) { return ((row[b] || 0) - (row[a] || 0)) || (u[b] - u[a]); });
+  }
 
   function escHtml(s) {
     return String(s).replace(/[&<>"]/g, function (c) {
@@ -371,7 +494,10 @@
     var word = sg.list[i];
     var el = sg.target;
     if (word == null || !el) { return; }
+    var info = beforeCaret(el);
+    var prev = info ? prevWordIn(info.before.slice(0, info.before.length - (sg.rr ? sg.rr.roman.length : 0))) : "";
     if (sg.rr) { sg.rr.replaceRun(word + " "); }
+    learnWord(prev, word);
     sgHide();
     try { el.focus(); } catch (e) {}
     updateSuggestions(el); // offer next-word predictions
@@ -382,16 +508,29 @@
     var rr = romanRunCtx(el);
     var items = [];
     var how = "";
-    if (rr && rr.roman && ROMAN.test(rr.roman)) {
-      var pfx = parse(rr.roman);
-      how = "roman='" + rr.roman + "'->'" + pfx + "'";
-      for (var i = 0; i < DICT.length && items.length < 6; i++) {
-        if (DICT[i].indexOf(pfx) === 0 && DICT[i] !== pfx) { items.push(DICT[i]); }
+    var seen = {};
+    function add(list, filter) {
+      for (var i = 0; i < list.length && items.length < 6; i++) {
+        var w = list[i];
+        if (!seen[w] && (!filter || filter(w))) { seen[w] = 1; items.push(w); }
       }
+    }
+    if (rr && rr.roman && ROMAN.test(rr.roman)) {
+      // completing a word: your words, then what usually follows the previous
+      // word, then the most frequent words overall
+      var pfx = parse(rr.roman);
+      var info = beforeCaret(el);
+      var prev = info ? norm(prevWordIn(info.before.slice(0, info.before.length - rr.roman.length))) : "";
+      var starts = function (w) { return w !== pfx && w.indexOf(pfx) === 0; };
+      how = "roman='" + rr.roman + "'->'" + pfx + "' prev='" + prev + "'";
+      add(learnedWith(pfx, prev));
+      if (prev) { add(corpusNextOf(prev), starts); }
+      add(DICT, starts);
     } else {
-      var lw = lastBanglaWord(el);
+      // after a finished word: your usual next words, hand-picked replies, corpus
+      var lw = norm(lastBanglaWord(el));
       how = "nextword last='" + lw + "'";
-      if (lw && NEXT[lw]) { items = NEXT[lw].slice(0, 6); }
+      if (lw) { add(learnedNext(lw)); add(NEXT[lw] || []); add(corpusNextOf(lw)); }
     }
     hud(how + " -> " + items.length + " sugg" + (items.length ? " (" + items[0] + "…)" : ""));
     if (items.length) { sgShow(el, items, rr); } else { sgHide(); }
@@ -412,17 +551,6 @@
       if (e.key === "Enter" && sg.idx >= 0) { e.preventDefault(); sgAccept(sg.idx); return; }
     }
 
-    // Ctrl/Cmd + Space toggles language for this field
-    if ((e.ctrlKey || e.metaKey) && (e.code === "Space" || e.key === " ")) {
-      if (!ENABLED) { return; }
-      e.preventDefault();
-      var st = stateOf(el);
-      st.lang = (st.lang === "bn") ? "en" : "bn";
-      if (st.lang !== "bn") { sgHide(); }
-      showBadge(el, st.lang);
-      return;
-    }
-
     if (!ENABLED) { return; }
     var s = stateOf(el);
     if (s.lang === "bn" && isSeparatorKey(e)) {
@@ -440,12 +568,39 @@
     if (s.lang === "bn") { updateSuggestions(el); }
   }, true);
 
+  // Toggle shortcut (default Ctrl+Space, user-changeable) is a browser command:
+  // background.js receives it and messages every frame of the tab. Only the
+  // frame that has focus in a text box acts, so exactly one toggle happens.
+  function toggleLang(el) {
+    var st = stateOf(el);
+    st.lang = (st.lang === "bn") ? "en" : "bn";
+    if (st.lang !== "bn") { sgHide(); }
+    showBadge(el, st.lang);
+    saveSiteLang(st.lang);
+  }
+  try {
+    API.runtime.onMessage.addListener(function (msg) {
+      if (!msg || msg.type !== "mphony-toggle" || !ENABLED) { return; }
+      if (!document.hasFocus()) { return; }
+      var el = document.activeElement;
+      if (!isEditable(el)) { return; }
+      toggleLang(el);
+    });
+  } catch (e) {}
+
+  // Remind which mode the site is in when you enter a box in Bangla mode,
+  // since the mode now carries over from earlier visits.
+  document.addEventListener("focusin", function (e) {
+    if (!ENABLED || siteState.lang !== "bn") { return; }
+    if (!isEditable(e.target)) { return; }
+    showBadge(e.target, "bn");
+  }, true);
+
   document.addEventListener("focusout", function (e) {
     if (!ENABLED) { return; }
     var el = e.target;
     if (!isEditable(el)) { return; }
-    var s = states.get(stateKey(el));
-    if (s && s.lang === "bn") { convertWord(el); }
+    if (siteState.lang === "bn") { convertWord(el); }
     sgHide();
   }, true);
 
