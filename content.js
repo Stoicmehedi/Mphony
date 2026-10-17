@@ -15,7 +15,7 @@
   function parse(s) { try { return AVRO.parse(s); } catch (e) { return s; } }
 
   // one-time load marker so you can confirm injection + which build is live
-  var DHONI_VERSION = "0.2.0-next";
+  var DHONI_VERSION = "0.2.1-docs";
   try { console.log("%cMphony " + DHONI_VERSION + " loaded", "color:#2f6f6a;font-weight:bold", "on", location.host); } catch (e) {}
 
   // ---- settings (synced with storage + popup) ----
@@ -463,6 +463,7 @@
     sg.el.innerHTML = html;
   }
   function caretRect(el) {
+    if (DOCS && el === DOCS.frame) { return docsCaretRect(); }
     if (!isInputLike(el)) {
       try {
         var sel = window.getSelection();
@@ -479,6 +480,7 @@
   function sgShow(el, items, rr) {
     sgEnsure();
     sg.list = items.slice(0, 6); sg.idx = -1; sg.target = el; sg.rr = rr || null;
+    sg.docs = !!(DOCS && el === DOCS.frame);
     sgRender();
     try {
       sg.el.style.display = "block";
@@ -497,6 +499,7 @@
     var word = sg.list[i];
     var el = sg.target;
     if (word == null || !el) { return; }
+    if (sg.docs) { docsAccept(word); return; }
     var info = beforeCaret(el);
     var prev = info ? prevWordIn(info.before.slice(0, info.before.length - (sg.rr ? sg.rr.roman.length : 0))) : "";
     if (sg.rr) { sg.rr.replaceRun(word + " "); }
@@ -509,6 +512,22 @@
     if (!ENABLED) { sgHide(); return; }
     if (stateOf(el).lang !== "bn") { hud("skip (lang=en)"); sgHide(); return; }
     var rr = romanRunCtx(el);
+    var roman = (rr && rr.roman && ROMAN.test(rr.roman)) ? rr.roman : "";
+    var prev;
+    if (roman) {
+      var info = beforeCaret(el);
+      prev = info ? prevWordIn(info.before.slice(0, info.before.length - roman.length)) : "";
+    } else {
+      prev = lastBanglaWord(el);
+    }
+    var items = suggestFor(roman, prev);
+    if (items.length) { sgShow(el, items, rr); } else { sgHide(); }
+  }
+
+  // Suggestions for the roman run being typed (or, if empty, the next word),
+  // given the Bangla word before it.
+  function suggestFor(roman, prev) {
+    prev = norm(prev || "");
     var items = [];
     var how = "";
     var seen = {};
@@ -518,25 +537,22 @@
         if (!seen[w] && (!filter || filter(w))) { seen[w] = 1; items.push(w); }
       }
     }
-    if (rr && rr.roman && ROMAN.test(rr.roman)) {
+    if (roman) {
       // completing a word: your words, then what usually follows the previous
       // word, then the most frequent words overall
-      var pfx = parse(rr.roman);
-      var info = beforeCaret(el);
-      var prev = info ? norm(prevWordIn(info.before.slice(0, info.before.length - rr.roman.length))) : "";
+      var pfx = parse(roman);
       var starts = function (w) { return w !== pfx && w.indexOf(pfx) === 0; };
-      how = "roman='" + rr.roman + "'->'" + pfx + "' prev='" + prev + "'";
+      how = "roman='" + roman + "'->'" + pfx + "' prev='" + prev + "'";
       add(learnedWith(pfx, prev));
       if (prev) { add(corpusNextOf(prev), starts); }
       add(DICT, starts);
     } else {
       // after a finished word: your usual next words, hand-picked replies, corpus
-      var lw = norm(lastBanglaWord(el));
-      how = "nextword last='" + lw + "'";
-      if (lw) { add(learnedNext(lw)); add(NEXT[lw] || []); add(corpusNextOf(lw)); }
+      how = "nextword last='" + prev + "'";
+      if (prev) { add(learnedNext(prev)); add(NEXT[prev] || []); add(corpusNextOf(prev)); }
     }
     hud(how + " -> " + items.length + " sugg" + (items.length ? " (" + items[0] + "…)" : ""));
-    if (items.length) { sgShow(el, items, rr); } else { sgHide(); }
+    return items;
   }
 
   // ---- event wiring (capture phase, document-wide) ----
@@ -594,6 +610,7 @@
       if (!msg || msg.type !== "mphony-toggle" || !ENABLED) { return; }
       if (!document.hasFocus()) { return; }
       var el = document.activeElement;
+      if (DOCS && el === DOCS.frame) { toggleLang(el); docsReset(); return; }
       if (!isEditable(el)) { return; }
       toggleLang(el);
     });
@@ -614,6 +631,97 @@
     if (siteState.lang === "bn") { convertWord(el); }
     sgHide();
   }, true);
+
+  // ===================== Google Docs =====================
+  // Docs paints text on a canvas and takes keys from a hidden box in a
+  // same-origin iframe that it empties after every key, so the usual "read the
+  // word before the caret, replace it" approach can't work. Instead we listen
+  // on that iframe, remember the roman letters ourselves, and at a word break
+  // ask docs-main.js (page world) to send Backspaces + the Bangla text.
+  var DOCS = (window.top === window && location.hostname === "docs.google.com" &&
+              /^\/document\//.test(location.pathname)) ? { frame: null, buf: "", prev: "" } : null;
+
+  function docsSend(del, text) {
+    hud("docs: del " + del + " + '" + text + "'");
+    try { document.dispatchEvent(new CustomEvent("mphony-docs", { detail: JSON.stringify({ del: del, text: text }) })); } catch (e) {}
+  }
+  function docsReset() { if (DOCS) { DOCS.buf = ""; DOCS.prev = ""; } sgHide(); }
+  function docsCaretRect() {
+    var c = document.querySelector(".kix-cursor-caret");
+    var r = c && c.getBoundingClientRect();
+    return (r && r.height) ? r : DOCS.frame.getBoundingClientRect();
+  }
+  function docsSuggest() {
+    var roman = ROMAN.test(DOCS.buf) ? DOCS.buf : "";
+    var items = (roman || DOCS.prev) ? suggestFor(roman, DOCS.prev) : [];
+    if (items.length) { sgShow(DOCS.frame, items, null); } else { sgHide(); }
+  }
+  // finish the roman word: swap it for Bangla in the document
+  function docsCommit() {
+    var buf = DOCS.buf;
+    DOCS.buf = "";
+    if (!buf || !ROMAN.test(buf)) { return ""; }
+    var bn = parse(buf);
+    docsSend(buf.length, bn);
+    learnWord(DOCS.prev, bn);
+    return bn;
+  }
+  function docsAccept(word) {
+    docsSend(DOCS.buf.length, word + " ");
+    learnWord(DOCS.prev, word);
+    DOCS.buf = "";
+    DOCS.prev = word;
+    docsSuggest();
+  }
+  function docsKeydown(e) {
+    if (!e.isTrusted || !ENABLED || e.isComposing) { return; }
+    var stop = function () { e.preventDefault(); e.stopImmediatePropagation(); };
+    if (SHORTCUT_FALLBACK && e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "Space" || e.key === " ")) {
+      stop(); toggleLang(DOCS.frame); docsReset(); return;
+    }
+    if (siteState.lang !== "bn") { return; }
+    if (sgVisible()) {
+      var n = sg.list.length;
+      if (e.key === "ArrowDown") { stop(); sg.idx = (sg.idx + 1) % n; sgRender(); return; }
+      if (e.key === "ArrowUp") { stop(); sg.idx = (sg.idx - 1 + n) % n; sgRender(); return; }
+      if (e.key === "Escape") { stop(); sgHide(); return; }
+      if (e.key === "Tab") { stop(); docsAccept(sg.list[sg.idx < 0 ? 0 : sg.idx]); return; }
+      if (e.key === "Enter" && sg.idx >= 0) { stop(); docsAccept(sg.list[sg.idx]); return; }
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) { docsReset(); return; }
+    var k = e.key;
+    if (k.length === 1 && ROMAN_INPUT.test(k)) { DOCS.buf += k; docsSuggest(); return; } // Docs types it
+    if (k === "Backspace") {
+      if (DOCS.buf) { DOCS.buf = DOCS.buf.slice(0, -1); docsSuggest(); } else { docsReset(); }
+      return;
+    }
+    if (isSeparatorKey(e)) {
+      var bn = docsCommit();                   // the separator itself still reaches Docs
+      if (k === " ") { if (bn) { DOCS.prev = bn; } docsSuggest(); } else { docsReset(); }
+      return;
+    }
+    if (k.length > 1 && /^(Shift|CapsLock|Control|Alt|Meta|Dead)$/.test(k)) { return; }
+    docsReset();                               // arrows, Delete, Home… moved the caret
+  }
+  function docsAttach() {
+    var f = document.querySelector("iframe.docs-texteventtarget-iframe");
+    var w = f && f.contentWindow;
+    if (!w || w.__mphonyDocs) { return; }
+    try {
+      w.addEventListener("keydown", docsKeydown, true);
+      w.addEventListener("mousedown", function () { docsReset(); }, true);
+      w.__mphonyDocs = true;
+      DOCS.frame = f;
+      hud("docs: attached");
+    } catch (e) { hud("docs: attach failed " + e); }
+  }
+  if (DOCS) {
+    docsAttach();
+    setInterval(docsAttach, 1000);              // Docs creates/recreates the iframe late
+    document.addEventListener("mousedown", function (e) {
+      if (!(sg.el && sg.el.contains(e.target))) { docsReset(); } // clicked elsewhere in the doc
+    }, true);
+  }
 
   // ---- tiny on-page status badge ----
   var badgeEl = null, badgeTimer = null;

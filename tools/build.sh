@@ -6,7 +6,7 @@
 # Also leaves unpacked copies in dist/chrome/ and dist/firefox/ for loading.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-FILES=(manifest.json background.js content.js avro-lib.js dict-bn.js next-bn.js popup.html popup.js icons README.md)
+FILES=(manifest.json background.js content.js docs-main.js avro-lib.js dict-bn.js next-bn.js popup.html popup.js icons README.md)
 VER=$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')
 rm -rf dist && mkdir -p dist/chrome dist/firefox
 cp -r "${FILES[@]}" dist/chrome/

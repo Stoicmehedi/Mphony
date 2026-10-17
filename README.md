@@ -54,12 +54,16 @@ Chrome's `service_worker`), so build it first: `./tools/build.sh`.
 | `dict-bn.js` | ~29k frequency-ranked Bangla words for completions |
 | `next-bn.js` | Next-word table (word-pair counts, indexes into `dict-bn.js`) |
 | `background.js` | Relays the toggle shortcut to the page |
+| `docs-main.js` | Google Docs only: sends key events in the page's own world |
 | `popup.html` / `popup.js` | Toolbar popup: enable, learning, shortcut, debug |
 | `icons/` | Toolbar icons |
 
 ## Known limits (prototype)
 
-- **Rich editors** (Google Docs, Slack, Draft.js/ProseMirror-based boxes) may not
+- **Google Docs** has its own input path: Docs draws text on a canvas and reads keys
+  from a hidden iframe, so Mphony tracks the roman word itself and, at a word break,
+  has `docs-main.js` (page world) send Docs Backspaces plus the Bangla text.
+- **Other rich editors** (Slack, Draft.js/ProseMirror-based boxes) may not
   work — they manage their own DOM/canvas. Plain inputs, textareas, and basic
   chat/comment boxes work.
 - Conversion happens at word boundaries (space/Enter/punctuation/blur), so you see
