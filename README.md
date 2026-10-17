@@ -36,9 +36,11 @@ Works in `<input>`, `<textarea>`, and `contenteditable` boxes (incl. WhatsApp/Yo
    The mode is remembered per website: new tabs and reloads of that site open in the last mode you used there (other sites are unaffected).
 
 ### Firefox
+Firefox needs a slightly different manifest (background `scripts` instead of
+Chrome's `service_worker`), so build it first: `./tools/build.sh`.
 1. Go to `about:debugging#/runtime/this-firefox`.
 2. Click **Load Temporary Add-on…**.
-3. Select the `manifest.json` file in this folder.
+3. Select `dist/firefox/manifest.json`.
 4. Test the same way. (Temporary add-ons are removed when Firefox restarts;
    permanent install requires signing at addons.mozilla.org.)
 
@@ -46,7 +48,7 @@ Works in `<input>`, `<textarea>`, and `contenteditable` boxes (incl. WhatsApp/Yo
 
 | File | Purpose |
 |------|---------|
-| `manifest.json` | MV3 manifest (Chrome + Firefox) |
+| `manifest.json` | MV3 manifest (Chrome; `tools/build.sh` derives the Firefox one) |
 | `content.js` | Injected into every page; the English/Bangla logic + suggestions |
 | `avro-lib.js` | The Avro phonetic engine (MPL-1.1) |
 | `dict-bn.js` | ~29k frequency-ranked Bangla words for completions |
@@ -83,3 +85,9 @@ Parallel Corpora from Movie and TV Subtitles*, LREC) and **Bangla Wikipedia**
 and `bnwiki.xml.bz2` (https://dumps.wikimedia.org/bnwiki/latest/bnwiki-latest-pages-articles.xml.bz2)
 placed in a corpus folder: `python3 -I tools/build_next.py . /path/to/corpus` (~4 min).
 `node tools/peek.js . আমি শুভ` prints the suggestions for some words.
+
+## Packaging
+
+`./tools/build.sh` writes `dist/mphony-chrome-<version>.zip` (Chrome Web Store) and
+`dist/mphony-firefox-<version>.zip` (addons.mozilla.org), plus unpacked copies in
+`dist/chrome/` and `dist/firefox/`.
